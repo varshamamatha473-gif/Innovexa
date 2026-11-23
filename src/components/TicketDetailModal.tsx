@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   AlertTriangle,
   Check,
@@ -119,7 +120,20 @@ export function TicketDetailModal({
     minute: "2-digit",
   });
 
-  return (
+  const keyEntities = Array.isArray(complaint.agent1?.keyEntities)
+    ? complaint.agent1.keyEntities
+    : [];
+  const staffActionSteps = Array.isArray(complaint.agent2?.staffActionSteps)
+    ? complaint.agent2.staffActionSteps
+    : [];
+  const reporterNextSteps = Array.isArray(complaint.agent3?.reporterNextSteps)
+    ? complaint.agent3.reporterNextSteps
+    : [];
+  const resolutionChecklist = Array.isArray(complaint.agent3?.resolutionChecklist)
+    ? complaint.agent3.resolutionChecklist
+    : [];
+
+  return createPortal(
     <div
       role="dialog"
       aria-modal="true"
@@ -307,9 +321,7 @@ export function TicketDetailModal({
               <div>
                 <span className="text-slate-500">Key Entities: </span>
                 <span className="font-medium text-slate-900">
-                  {complaint.agent1.keyEntities.length > 0
-                    ? complaint.agent1.keyEntities.join(", ")
-                    : "None extracted"}
+                  {keyEntities.length > 0 ? keyEntities.join(", ") : "None extracted"}
                 </span>
               </div>
             </div>
@@ -362,13 +374,13 @@ export function TicketDetailModal({
               {complaint.agent2.policyNotes}
             </p>
 
-            {complaint.agent2.staffActionSteps.length > 0 && (
+            {staffActionSteps.length > 0 && (
               <div className="mt-3">
                 <p className="text-xs font-semibold text-slate-700">
                   Investigation &amp; Diagnostic Steps
                 </p>
                 <ol className="mt-1.5 space-y-1 list-decimal list-inside text-sm text-slate-700">
-                  {complaint.agent2.staffActionSteps.map((step, idx) => (
+                  {staffActionSteps.map((step, idx) => (
                     <li key={idx}>{step}</li>
                   ))}
                 </ol>
@@ -417,7 +429,7 @@ export function TicketDetailModal({
               <div>
                 <p className="text-xs font-semibold text-slate-700">Recommended Next Steps</p>
                 <ul className="mt-1.5 space-y-1 list-disc list-inside text-sm text-slate-700">
-                  {complaint.agent3.reporterNextSteps.map((step, idx) => (
+                  {reporterNextSteps.map((step, idx) => (
                     <li key={idx}>{step}</li>
                   ))}
                 </ul>
@@ -427,7 +439,7 @@ export function TicketDetailModal({
                   Closure Verification Checklist
                 </p>
                 <ul className="mt-1.5 space-y-1 list-disc list-inside text-sm text-slate-700">
-                  {complaint.agent3.resolutionChecklist.map((item, idx) => (
+                  {resolutionChecklist.map((item, idx) => (
                     <li key={idx}>{item}</li>
                   ))}
                 </ul>
@@ -447,6 +459,7 @@ export function TicketDetailModal({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

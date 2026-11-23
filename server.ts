@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import express, { type Request, type Response } from "express";
 import Database from "better-sqlite3";
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI, ThinkingLevel, Type } from "@google/genai";
 import type {
   Agent1Result,
   Agent2Result,
@@ -67,11 +67,29 @@ function extractGeminiError(error: unknown): {
   }
 }
 
-async function callWithRetry<T>(fn: () => Promise<T>, maxAttempts = 4): Promise<T> {
+function withTimeout<T>(promise: Promise<T>, ms = 20000): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`Gemini API request timed out after ${ms}ms`));
+    }, ms);
+    promise.then(
+      (val) => {
+        clearTimeout(timer);
+        resolve(val);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      }
+    );
+  });
+}
+
+async function callWithRetry<T>(fn: () => Promise<T>, maxAttempts = 2): Promise<T> {
   let lastError: unknown;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      return await fn();
+      return await withTimeout(fn(), 20000);
     } catch (error: unknown) {
       lastError = error;
       const errMsg = error instanceof Error ? error.message : String(error);
@@ -85,7 +103,7 @@ async function callWithRetry<T>(fn: () => Promise<T>, maxAttempts = 4): Promise<
       if (isNonRetryable || attempt === maxAttempts) {
         throw error;
       }
-      const delayMs = 600 * Math.pow(2, attempt - 1);
+      const delayMs = 500 * Math.pow(2, attempt - 1);
       await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
   }
@@ -96,37 +114,49 @@ async function generateWithGemini(
   ai: GoogleGenAI,
   params: Omit<Parameters<GoogleGenAI["models"]["generateContent"]>[0], "model">
 ) {
+  const enrichedConfig = {
+    ...params.config,
+    thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+  };
+  const requestParams = { ...params, config: enrichedConfig };
+
   const skipPrimary = Date.now() < primaryDailyQuotaExhaustedUntil;
   if (!skipPrimary) {
     try {
-      return await callWithRetry(() =>
-        ai.models.generateContent({
-          model: PRIMARY_MODEL,
-          ...params,
-        })
+      return await callWithRetry(
+        () =>
+          ai.models.generateContent({
+            model: PRIMARY_MODEL,
+            ...requestParams,
+          }),
+        2
       );
     } catch (err: unknown) {
       const { status, isDailyQuota } = extractGeminiError(err);
-      if (status === 429) {
+      if (status === 429 || status === 503 || status === 500) {
         if (isDailyQuota) {
           primaryDailyQuotaExhaustedUntil = Date.now() + 15 * 60 * 1000;
         }
-        return await callWithRetry(() =>
-          ai.models.generateContent({
-            model: FALLBACK_MODEL,
-            ...params,
-          })
+        return await callWithRetry(
+          () =>
+            ai.models.generateContent({
+              model: FALLBACK_MODEL,
+              ...requestParams,
+            }),
+          3
         );
       }
       throw err;
     }
   }
 
-  return await callWithRetry(() =>
-    ai.models.generateContent({
-      model: FALLBACK_MODEL,
-      ...params,
-    })
+  return await callWithRetry(
+    () =>
+      ai.models.generateContent({
+        model: FALLBACK_MODEL,
+        ...requestParams,
+      }),
+    3
   );
 }
 
@@ -540,7 +570,7 @@ async function startServer() {
     try {
       const ticketId = String(req.params.ticketId || "").trim();
       const row = db
-        .prepare("SELECT * FROM complaints WHERE ticket_id = ?")
+        .prepare("SELECT * FROM complaints WHERE UPPER(ticket_id) = UPPER(?)")
         .get(ticketId) as ComplaintRow | undefined;
 
       if (!row) {
