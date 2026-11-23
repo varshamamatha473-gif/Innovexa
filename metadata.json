@@ -1,0 +1,6 @@
+{
+  "name": "CampusConnect",
+  "description": "Campus complaint intake and three-agent AI triage portal with persistent ticket tracking.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
